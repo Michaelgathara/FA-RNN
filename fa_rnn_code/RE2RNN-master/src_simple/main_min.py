@@ -71,11 +71,3 @@ if __name__ == '__main__':
         args.automata_path_forward = automata_path_forward
         args.automata_path_backward = automata_path_backward
         train_onehot(args, paths)
-
-
-
-
-
-
-
-
