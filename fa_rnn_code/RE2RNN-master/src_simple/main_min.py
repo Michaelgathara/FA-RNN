@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default='ADAM', help='optimizer SGD or ADAM')
     parser.add_argument('--additional_nonlinear', type=str, default='none', help='additional nonlinear after DxR, should be in [none, relu, sigmoid, tanh]')
     parser.add_argument('--additional_state', type=int, default=0, help='additional reserved state for generalization')
-    parser.add_argument('--dataset', type=str, default='ATIS', help="dataset name, in ATIS, TREC, SMS")
+    parser.add_argument('--dataset', type=str, default='TREC', help="dataset name, in ATIS, TREC, SMS")
     parser.add_argument('--train_portion', type=float, default=1.0, help='training portion, in 0.01, 0.1, 1.0 ')
     parser.add_argument('--random', type=int, default=0, help='if use random initialzation')
 
