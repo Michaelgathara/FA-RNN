@@ -15,7 +15,6 @@ from copy import deepcopy
 
 from retransformer import TransformerModel
 
-
 def get_average(M, normalize_type):
     """
     :param M:
@@ -111,6 +110,144 @@ def save_args_and_results(args, results, loggers):
     }, open(file_save_path, 'wb'))
 
 
+def train_onehot(args, paths):
+    logger = Logger()
+
+    dset = load_classification_dataset(args.dataset)
+    t2i, i2t, in2i, i2in = dset['t2i'], dset['i2t'], dset['in2i'], dset['i2in']
+    query_train, intent_train = dset['query_train'], dset['intent_train']
+    query_dev, intent_dev = dset['query_dev'], dset['intent_dev']
+    query_test, intent_test = dset['query_test'], dset['intent_test']
+
+
+    len_stats(query_train)
+    len_stats(query_dev)
+    len_stats(query_test)
+    # extend the padding
+    # add pad <pad> to the last of vocab
+    i2t[len(i2t)] = '<pad>'
+    t2i['<pad>'] = len(i2t) - 1
+
+    train_query, train_query_inverse, train_lengths = pad_dataset(query_train, args, t2i['<pad>'])
+    dev_query, dev_query_inverse, dev_lengths = pad_dataset(query_dev, args, t2i['<pad>'])
+    test_query, test_query_inverse, test_lengths = pad_dataset(query_test, args, t2i['<pad>'])
+
+    shots = int(len(train_query) * args.train_portion)
+    assert args.train_portion == 1.0
+    # We currently not support ublabel and low-resource for onehot
+    intent_data_train = ATISIntentBatchDataset(train_query, train_lengths, intent_train, shots)
+    intent_data_dev = ATISIntentBatchDataset(dev_query, dev_lengths, intent_dev, shots)
+    intent_data_test = ATISIntentBatchDataset(test_query, test_lengths, intent_test)
+
+    intent_dataloader_train = DataLoader(intent_data_train, batch_size=args.bz)
+    intent_dataloader_dev = DataLoader(intent_data_dev, batch_size=args.bz)
+    intent_dataloader_test = DataLoader(intent_data_test, batch_size=args.bz)
+
+    automata_dicts = load_pkl(paths[0])
+    if 'automata' not in automata_dicts:
+        automata = automata_dicts
+    else:
+        automata = automata_dicts['automata']
+
+    language_tensor, state2idx, wildcard_mat, language = dfa_to_tensor(automata, t2i)
+    complete_tensor = language_tensor + wildcard_mat
+
+    assert args.additional_state == 0
+
+    if args.dataset == 'ATIS':
+        mat, bias = create_mat_and_bias_with_empty_ATIS(automata, in2i=in2i, i2in=i2in,)
+    elif args.dataset == 'TREC':
+        mat, bias = create_mat_and_bias_with_empty_TREC(automata, in2i=in2i, i2in=i2in,)
+    elif args.dataset == 'SMS':
+        mat, bias = create_mat_and_bias_with_empty_SMS(automata, in2i=in2i, i2in=i2in,)
+
+    # for padding
+    V, S1, S2 = complete_tensor.shape
+    complete_tensor_extend = np.concatenate((complete_tensor, np.zeros((1, S1, S2))))
+    print(complete_tensor_extend.shape)
+    model = IntentIntegrateOnehot(complete_tensor_extend,
+                                  config=args,
+                                  mat=mat,
+                                  bias=bias)
+    
+    mode = 'onehot'
+    criterion = torch.nn.CrossEntropyLoss()
+
+    if args.optimizer == 'SGD':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=0)
+    if args.optimizer == 'ADAM':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
+
+    if torch.cuda.is_available():
+        model = model.cuda()
+
+    acc_train_init, avg_loss_train_init, p, r = val(model, intent_dataloader_train, epoch=0, mode='TRAIN', config=args,
+                                              i2in=i2in, criterion=criterion)
+    # DEV
+    acc_dev_init, avg_loss_dev_init, p, r = val(model, intent_dataloader_dev, epoch=0, mode='DEV', config=args, i2in=i2in, criterion=criterion)
+    # TEST
+    acc_test_init, avg_loss_test_init, p, r = val(model, intent_dataloader_test, epoch=0, mode='TEST', config=args,
+                                            i2in=i2in, criterion=criterion)
+
+    best_dev_acc = acc_dev_init
+    counter = 0
+    best_dev_test_acc = acc_test_init
+
+    for epoch in range(1, args.epoch + 1):
+        avg_loss = 0
+        acc = 0
+
+        pbar_train = tqdm(intent_dataloader_train)
+        pbar_train.set_description("TRAIN EPOCH {}".format(epoch))
+
+        model.train()
+        for batch in pbar_train:
+
+            optimizer.zero_grad()
+
+            x = batch['x']
+            label = batch['i'].view(-1)
+            lengths = batch['l']
+
+            if torch.cuda.is_available():
+                x = x.cuda()
+                lengths = lengths.cuda()
+                label = label.cuda()
+
+            scores = model(x, lengths)
+            loss_cross_entropy = criterion(scores, label)
+            loss = loss_cross_entropy
+
+            loss.backward()
+            optimizer.step()
+            avg_loss += loss.item()
+
+            acc += (scores.argmax(1) == label).sum().item()
+
+            pbar_train.set_postfix_str("{} - total right: {}, total loss: {}".format('TRAIN', acc, loss))
+
+        acc = acc / len(intent_data_train)
+        avg_loss = avg_loss / len(intent_data_train)
+        print("{} Epoch: {} | ACC: {}, LOSS: {}".format('TRAIN', epoch, acc, avg_loss))
+        logger.add("{} Epoch: {} | ACC: {}, LOSS: {}".format('TRAIN', epoch, acc, avg_loss))
+
+        # DEV
+        acc_dev, avg_loss_dev, p, r = val(model, intent_dataloader_dev, epoch, 'DEV', logger, config=args, criterion=criterion)
+        # TEST
+        acc_test, avg_loss_test, p, r = val(model, intent_dataloader_test, epoch, 'TEST', logger, config=args, criterion=criterion)
+
+        counter += 1  # counter for early stopping
+
+        if (acc_dev is None) or (acc_dev > best_dev_acc):
+            counter = 0
+            best_dev_acc = acc_dev
+            best_dev_test_acc = acc_test
+
+        if counter > args.early_stop:
+            break
+
+    results = [acc_dev_init, acc_test_init, best_dev_acc, best_dev_test_acc]
+    save_args_and_results(args, results, logger)
 
 
 def train_fsa_rnn(args, paths):
@@ -155,20 +292,17 @@ def train_fsa_rnn(args, paths):
     forward_params['wildcard_mat_origin_extend'] = \
         get_init_params(args, in2i, i2in, t2i, paths[0])
 
-    model = IntentClassification(pretrained_embed=forward_params['pretrain_embed_extend'],
-                                 trans_r_1=forward_params['D1'],
-                                 trans_r_2=forward_params['D2'],
-                                 embed_r=forward_params['V_embed_extend'],
-                                 trans_wildcard=forward_params['wildcard_mat'],
-                                 config=args,
-                                 mat=forward_params['mat'],
-                                 bias=forward_params['bias'])
+    # model = IntentClassification(pretrained_embed=forward_params['pretrain_embed_extend'],
+    #                              trans_r_1=forward_params['D1'],
+    #                              trans_r_2=forward_params['D2'],
+    #                              embed_r=forward_params['V_embed_extend'],
+    #                              trans_wildcard=forward_params['wildcard_mat'],
+    #                              config=args,
+    #                              mat=forward_params['mat'],
+    #                              bias=forward_params['bias'])
     VOCAB_SIZE = len(forward_params['pretrain_embed_extend'])
-    print(f"\n\nThe train q: {i2t}")
-    VOCAB_SIZE = len(i2t)
-    print(f"The VOCAB SIZE: {VOCAB_SIZE}")
-    EMBED_SIZE = len(forward_params['V_embed_extend'])
-    NUM_HEADS = 28
+    EMBED_SIZE = 100
+    NUM_HEADS = 8
     HIDDEN_SIZE = EMBED_SIZE * 4
     NUM_LAYERS = 6
     NUM_CLASSES = 2
@@ -178,7 +312,6 @@ def train_fsa_rnn(args, paths):
                              nhid=HIDDEN_SIZE, 
                              nlayers=NUM_LAYERS,
                              nclasses=NUM_CLASSES)
-    print(model)
 
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -284,159 +417,6 @@ def train_fsa_rnn(args, paths):
 
     best_dev_test_acc, avg_loss_test, best_dev_test_p, best_dev_test_r \
         = val(best_dev_model, intent_dataloader_test, epoch, 'TEST', logger, config=args, criterion=criterion)
-
-    results = [acc_dev_init, acc_test_init, best_dev_acc, best_dev_test_acc]
-    save_args_and_results(args, results, logger)
-
-def train_onehot(args, paths):
-    logger = Logger()
-
-    dset = load_classification_dataset(args.dataset)
-    t2i, i2t, in2i, i2in = dset['t2i'], dset['i2t'], dset['in2i'], dset['i2in']
-    query_train, intent_train = dset['query_train'], dset['intent_train']
-    query_dev, intent_dev = dset['query_dev'], dset['intent_dev']
-    query_test, intent_test = dset['query_test'], dset['intent_test']
-
-
-    len_stats(query_train)
-    len_stats(query_dev)
-    len_stats(query_test)
-    # extend the padding
-    # add pad <pad> to the last of vocab
-    i2t[len(i2t)] = '<pad>'
-    t2i['<pad>'] = len(i2t) - 1
-
-    train_query, train_query_inverse, train_lengths = pad_dataset(query_train, args, t2i['<pad>'])
-    dev_query, dev_query_inverse, dev_lengths = pad_dataset(query_dev, args, t2i['<pad>'])
-    test_query, test_query_inverse, test_lengths = pad_dataset(query_test, args, t2i['<pad>'])
-
-    shots = int(len(train_query) * args.train_portion)
-    assert args.train_portion == 1.0
-    # We currently not support ublabel and low-resource for onehot
-    intent_data_train = ATISIntentBatchDataset(train_query, train_lengths, intent_train, shots)
-    intent_data_dev = ATISIntentBatchDataset(dev_query, dev_lengths, intent_dev, shots)
-    intent_data_test = ATISIntentBatchDataset(test_query, test_lengths, intent_test)
-
-    intent_dataloader_train = DataLoader(intent_data_train, batch_size=args.bz)
-    intent_dataloader_dev = DataLoader(intent_data_dev, batch_size=args.bz)
-    intent_dataloader_test = DataLoader(intent_data_test, batch_size=args.bz)
-
-    automata_dicts = load_pkl(paths[0])
-    if 'automata' not in automata_dicts:
-        automata = automata_dicts
-    else:
-        automata = automata_dicts['automata']
-
-    language_tensor, state2idx, wildcard_mat, language = dfa_to_tensor(automata, t2i)
-    complete_tensor = language_tensor + wildcard_mat
-
-    assert args.additional_state == 0
-
-    if args.dataset == 'ATIS':
-        mat, bias = create_mat_and_bias_with_empty_ATIS(automata, in2i=in2i, i2in=i2in,)
-    elif args.dataset == 'TREC':
-        mat, bias = create_mat_and_bias_with_empty_TREC(automata, in2i=in2i, i2in=i2in,)
-    elif args.dataset == 'SMS':
-        mat, bias = create_mat_and_bias_with_empty_SMS(automata, in2i=in2i, i2in=i2in,)
-
-    # for padding
-    V, S1, S2 = complete_tensor.shape
-    complete_tensor_extend = np.concatenate((complete_tensor, np.zeros((1, S1, S2))))
-    print(complete_tensor_extend.shape)
-    model = IntentIntegrateOnehot(complete_tensor_extend,
-                                  config=args,
-                                  mat=mat,
-                                  bias=bias)
-    # print(f"\n\nThe train q: {i2t}")
-    # VOCAB_SIZE = len(i2t)
-    # print(f"The VOCAB SIZE: {VOCAB_SIZE}")
-    # EMBED_SIZE = 512
-    # NUM_HEADS = 8
-    # HIDDEN_SIZE = EMBED_SIZE * 4
-    # NUM_LAYERS = 6
-    # NUM_CLASSES = 2
-    # model = TransformerModel(ntoken=VOCAB_SIZE, 
-    #                          ninp=EMBED_SIZE, 
-    #                          nhead=NUM_HEADS, 
-    #                          nhid=HIDDEN_SIZE, 
-    #                          nlayers=NUM_LAYERS,
-    #                          nclasses=NUM_CLASSES)
-
-    mode = 'onehot'
-    criterion = torch.nn.CrossEntropyLoss()
-
-    if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=0)
-    if args.optimizer == 'ADAM':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
-
-    if torch.cuda.is_available():
-        model = model.cuda()
-
-    acc_train_init, avg_loss_train_init, p, r = val(model, intent_dataloader_train, epoch=0, mode='TRAIN', config=args,
-                                              i2in=i2in, criterion=criterion)
-    # DEV
-    acc_dev_init, avg_loss_dev_init, p, r = val(model, intent_dataloader_dev, epoch=0, mode='DEV', config=args, i2in=i2in, criterion=criterion)
-    # TEST
-    acc_test_init, avg_loss_test_init, p, r = val(model, intent_dataloader_test, epoch=0, mode='TEST', config=args,
-                                            i2in=i2in, criterion=criterion)
-
-    best_dev_acc = acc_dev_init
-    counter = 0
-    best_dev_test_acc = acc_test_init
-
-    for epoch in range(1, args.epoch + 1):
-        avg_loss = 0
-        acc = 0
-
-        pbar_train = tqdm(intent_dataloader_train)
-        pbar_train.set_description("TRAIN EPOCH {}".format(epoch))
-
-        model.train()
-        for batch in pbar_train:
-
-            optimizer.zero_grad()
-
-            x = batch['x']
-            label = batch['i'].view(-1)
-            lengths = batch['l']
-
-            if torch.cuda.is_available():
-                x = x.cuda()
-                lengths = lengths.cuda()
-                label = label.cuda()
-
-            scores = model(x, lengths)
-            loss_cross_entropy = criterion(scores, label)
-            loss = loss_cross_entropy
-
-            loss.backward()
-            optimizer.step()
-            avg_loss += loss.item()
-
-            acc += (scores.argmax(1) == label).sum().item()
-
-            pbar_train.set_postfix_str("{} - total right: {}, total loss: {}".format('TRAIN', acc, loss))
-
-        acc = acc / len(intent_data_train)
-        avg_loss = avg_loss / len(intent_data_train)
-        print("{} Epoch: {} | ACC: {}, LOSS: {}".format('TRAIN', epoch, acc, avg_loss))
-        logger.add("{} Epoch: {} | ACC: {}, LOSS: {}".format('TRAIN', epoch, acc, avg_loss))
-
-        # DEV
-        acc_dev, avg_loss_dev, p, r = val(model, intent_dataloader_dev, epoch, 'DEV', logger, config=args, criterion=criterion)
-        # TEST
-        acc_test, avg_loss_test, p, r = val(model, intent_dataloader_test, epoch, 'TEST', logger, config=args, criterion=criterion)
-
-        counter += 1  # counter for early stopping
-
-        if (acc_dev is None) or (acc_dev > best_dev_acc):
-            counter = 0
-            best_dev_acc = acc_dev
-            best_dev_test_acc = acc_test
-
-        if counter > args.early_stop:
-            break
 
     results = [acc_dev_init, acc_test_init, best_dev_acc, best_dev_test_acc]
     save_args_and_results(args, results, logger)
