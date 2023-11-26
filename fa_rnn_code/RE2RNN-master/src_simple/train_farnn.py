@@ -338,7 +338,7 @@ def train_fsa_rnn(args, paths):
                format('TRAIN', acc_train_init, avg_loss_train_init, train_init_p, train_init_r))
     logger.add("{} INITIAL: ACC: {}, LOSS: {}, P: {}, R: {}".
                format('DEV', acc_dev_init, avg_loss_dev_init, dev_init_p, dev_init_r))
-    logger.add("{} INITIAL: ACC: {}, LOSS: {}, P: {}, R: {}".
+    logger.add("{} INITIAL: ACC : {}, LOSS: {}, P: {}, R: {}".
                format('TEST', acc_test_init, avg_loss_test_init, test_init_p, test_init_r))
 
     best_dev_acc = acc_dev_init
