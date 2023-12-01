@@ -66,10 +66,10 @@ def create_dataset_automata(args):
     merged_automata = all_automata.to_dict()
     time_str = create_datetime_str()
 
-    path = '../data/{}/automata/{}.{}.{}'.format(args.dataset_name, args.automata_name, time_str, mode)
+    path = '../data/{}/automata/{}'.format(args.dataset_name, args.automata_name)
     print("Drawing Graph and save at: {}".format(path))
     drawGraph(all_automata, )
-    path = '../data/{}/automata/{}.{}.{}.pkl'.format(args.dataset_name, args.automata_name, time_str, mode)
+    path = '../data/{}/automata/{}'.format(args.dataset_name, args.automata_name)
     print("Save the automata object at: {}".format(path))
     pickle.dump(merged_automata, open(path, 'wb'))
 

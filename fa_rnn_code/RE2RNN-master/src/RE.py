@@ -52,7 +52,7 @@ def REclassifier(model, intent_dataloader, config=None, i2in=None, is_cuda=True)
         cmap = sns.cubehelix_palette(8, start=2, rot=0, dark=0, light=.95, reverse=False)
         g = sns.heatmap(confusion_mat, annot=True,   cmap=cmap, linewidths=1,
                         linecolor='gray', xticklabels=labels, yticklabels=labels,)
-        plt.show()
+        # plt.show()
 
     p_micro = precision_score(all_label, all_pred, average='micro')
     r_micro = recall_score(all_label, all_pred, average='micro')

@@ -150,30 +150,12 @@ def get_automata_from_seed(args, seed):
             'automata.newrule.reversed.randomseed200.False.0.0354.3.pkl',
         ]
 
-    # elif args.dataset == 'TREC-hotswap':
-    #     automata_list = [
-    #         'automata.hotswap.split.randomseed150.False.0.0064.0.pkl',
-    #         'automata.hotswap.split.randomseed150.False.0.0089.1.pkl',
-    #         'automata.hotswap.split.randomseed150.False.0.0068.2.pkl',
-    #         'automata.hotswap.split.randomseed150.False.0.0086.3.pkl',
-    #     ]
-    #
-    #     automata_list_reverse = [
-    #         'automata.hotswap.reversed.randomseed150.False.0.0413.0.pkl',
-    #         'automata.hotswap.reversed.randomseed150.False.0.0414.1.pkl',
-    #         'automata.hotswap.reversed.randomseed150.False.0.0412.2.pkl',
-    #         'automata.hotswap.reversed.randomseed150.False.0.0414.3.pkl',
-    #     ]
-    #     args.dataset = 'TREC'
-
-
-
     elif args.dataset  == 'SMS':
         automata_list = [
-            'automata.split.randomseed.150.False.0.0002.0.pkl',
-            'automata.split.randomseed.150.False.0.0002.1.pkl',
-            'automata.split.randomseed.150.False.0.0003.2.pkl',
-            'automata.split.randomseed.150.False.0.0004.3.pkl',
+            'automata.150.0.0000.0.pkl',
+            'automata.150.0.0000.1.pkl',
+            'automata.150.0.0000.2.pkl',
+            'automata.150.0.0000.3.pkl',
         ]
 
         automata_list_reverse = [
@@ -182,71 +164,6 @@ def get_automata_from_seed(args, seed):
             'automata.newrule.reversed.randomseed150.False.0.0001.2.pkl',
             'automata.newrule.reversed.randomseed150.False.0.0001.3.pkl'
         ]
-
-    # elif args.dataset  == 'SMS0.8':
-    #     automata_list = [
-    #         'automata.SMS0.8.split.randomseed150.False.0.0003.0.pkl',
-    #         'automata.SMS0.8.split.randomseed150.False.0.0003.1.pkl',
-    #         'automata.SMS0.8.split.randomseed150.False.0.0004.2.pkl',
-    #         'automata.SMS0.8.split.randomseed150.False.0.0003.3.pkl',
-    #     ]
-    #
-    #     automata_list_reverse = [
-    #         'automata.SMS0.8.reversed.randomseed150.False.0.0006.0.pkl',
-    #         'automata.SMS0.8.reversed.randomseed150.False.0.0002.1.pkl',
-    #         'automata.SMS0.8.reversed.randomseed150.False.0.0003.2.pkl',
-    #         'automata.SMS0.8.reversed.randomseed150.False.0.0006.3.pkl'
-    #     ]
-    #     args.additional_state = 0
-    #
-    # elif args.dataset  == 'SMS0.5':
-    #     automata_list = [
-    #         'automata.SMS0.5.split.randomseed150.False.0.0005.0.pkl',
-    #         'automata.SMS0.5.split.randomseed150.False.0.0007.1.pkl',
-    #         'automata.SMS0.5.split.randomseed150.False.0.0004.2.pkl',
-    #         'automata.SMS0.5.split.randomseed150.False.0.0005.3.pkl',
-    #     ]
-    #
-    #     automata_list_reverse = [
-    #         'automata.SMS0.5.reversed.randomseed150.False.0.0004.0.pkl',
-    #         'automata.SMS0.5.reversed.randomseed150.False.0.0003.1.pkl',
-    #         'automata.SMS0.5.reversed.randomseed150.False.0.0005.2.pkl',
-    #         'automata.SMS0.5.reversed.randomseed150.False.0.0005.3.pkl'
-    #     ]
-    #     args.additional_state = 0
-    #
-    # elif args.dataset  == 'SMS0.3':
-    #     automata_list = [
-    #         'automata.SMS0.3.split.randomseed150.False.0.0014.0.pkl',
-    #         'automata.SMS0.3.split.randomseed150.False.0.0013.1.pkl',
-    #         'automata.SMS0.3.split.randomseed150.False.0.0017.2.pkl',
-    #         'automata.SMS0.3.split.randomseed150.False.0.0017.3.pkl',
-    #     ]
-    #
-    #     automata_list_reverse = [
-    #         'automata.SMS0.3.reversed.randomseed150.False.0.0015.0.pkl',
-    #         'automata.SMS0.3.reversed.randomseed150.False.0.0013.1.pkl',
-    #         'automata.SMS0.3.reversed.randomseed150.False.0.0013.2.pkl',
-    #         'automata.SMS0.3.reversed.randomseed150.False.0.0013.3.pkl'
-    #     ]
-    #     args.additional_state = 0
-    #
-    #
-    # elif args.dataset  == 'SMS0.1':
-    #     automata_list = [
-    #         'automata.SMS0.1.split.randomseed150.False.0.0000.0.pkl',
-    #         'automata.SMS0.1.split.randomseed150.False.0.0000.1.pkl',
-    #         'automata.SMS0.1.split.randomseed150.False.0.0000.2.pkl',
-    #         'automata.SMS0.1.split.randomseed150.False.0.0000.3.pkl',
-    #     ]
-    #
-    #     automata_list_reverse = [
-    #         'automata.SMS0.1.reversed.randomseed150.False.0.0000.0.pkl',
-    #         'automata.SMS0.1.reversed.randomseed150.False.0.0000.1.pkl',
-    #         'automata.SMS0.1.reversed.randomseed150.False.0.0000.2.pkl',
-    #         'automata.SMS0.1.reversed.randomseed150.False.0.0000.3.pkl'
-    #     ]
-    #     args.additional_state = 0
 
     return '../data/{}/automata/{}'.format(dset, automata_list[seed]), \
            '../data/{}/automata/{}'.format(dset, automata_list_reverse[seed])
